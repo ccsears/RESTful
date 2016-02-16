@@ -1,0 +1,305 @@
+package gad.interfaces.utils.web;
+
+/**
+ * TODO JavaDoc Needed
+ * 
+ * @author csears@us.ibm.com
+ */
+
+import gad.batch.framework.v01.BatchException;
+import gad.batch.framework.v01.BatchReport;
+
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLConnection;
+import java.net.URLStreamHandlerFactory;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Properties;
+import java.util.Vector;
+//import java.security.Security;
+//import java.security.*;
+
+public class InputDataOutputURL {
+	Class factoryClass = null;
+	URLStreamHandlerFactory factory = null;
+	String socksServer = "";
+	String socksPort = "";
+	//String prefix = "https://";
+	String fullURL;
+	boolean toString;
+	BatchReport batchreport;
+	SimpleDateFormat sdfDb2 = new SimpleDateFormat("yyyy-MM-dd-HH.mm.ss.SSS000");
+
+	public InputDataOutputURL(BatchReport pbatchreport, String passedurl, boolean inToString)	throws BatchException {
+		fullURL = new String(passedurl);
+		batchreport = pbatchreport;
+		toString = inToString;
+		batchreport.writeDetailRec("URL set to " + fullURL);
+		//fullURL = new String ("https://www.ibm.com");
+
+		Properties properties = System.getProperties();
+		socksServer = System.getProperty("SOCKSSERVER");
+		socksPort = System.getProperty("SOCKSPORT");
+
+		if ((socksServer != null) && (socksPort != null)) {
+			properties.put("socksProxyHost", socksServer);
+			properties.put("socksProxyPort", socksPort);
+			batchreport.writeDetailRec("Socks Server set to " + socksServer);
+			batchreport.writeDetailRec("Socks Port set to " + socksPort);
+		} else
+			batchreport.writeDetailRec("No socks server is being used!");
+
+//		Security.addProvider(new com.sun.net.ssl.internal.ssl.Provider());
+
+		String handlers = System.getProperty("java.protocol.handler.pkgs");
+		if (handlers == null) {
+			// nothing specified yet (expected case)
+			properties.put("java.protocol.handler.pkgs",
+					"com.sun.net.ssl.internal.www.protocol");
+		} else {
+			// something already there, put ourselves out front
+			properties.put("java.protocol.handler.pkgs",
+					"com.sun.net.ssl.internal.www.protocol|".concat(handlers));
+		}
+
+		System.setProperties(properties); // put the updated properties back in System
+	}
+
+	/**
+	 * Perform send to a URL.  Don't get a response.
+	 * PM)
+	 */
+	public int processSend() {
+				
+		try {
+			URL page = new URL(fullURL); // Process the URL far enough to find the right handler
+			URLConnection urlc = page.openConnection();
+			urlc.setUseCaches(false); // Don't look at possibly cached data
+			batchreport.writeDetailRec("Content-type = " + urlc.getContentType()); // See what's here
+			batchreport.writeDetailRec("Content-length = " + urlc.getContentLength()); // See how much of it there is
+
+			if (toString) 
+				batchreport.writeDetailRec("-- START HTTP -- "	+ sdfDb2.format(Calendar.getInstance().getTime()));
+
+			// Read it all and print it out
+			BufferedReader br = new BufferedReader(new InputStreamReader(urlc.getInputStream()));
+			String buffer = "\n";
+			while (buffer != null) {
+				try {
+					batchreport.writeDetailRec(buffer);
+					buffer = br.readLine();
+				} catch (IOException ioe) {
+					ioe.printStackTrace();
+					return -1;
+				}
+			}
+
+			if (toString)
+				batchreport.writeDetailRec("-- END HTTP -- " + sdfDb2.format(Calendar.getInstance().getTime()));
+	
+			batchreport.writeDetailRec("Transferred to Web site successfully!");
+		} catch (MalformedURLException mue) {
+			batchreport.writeDetailRec(fullURL + " is not a URL that can be resolved");
+			return -1;
+		} catch (IOException ie) {
+			ie.printStackTrace();
+			return -1;
+		}
+		return 0;
+	}
+
+	/**
+	 * Perform send to a URL.  Get a response.
+	 *
+	 */
+	public String processSendReceive() {
+		String replyMsg = "";
+
+		if (toString) 
+			batchreport.writeDetailRec("-- START HTTP -- "	+ sdfDb2.format(Calendar.getInstance().getTime()));
+		
+		try {
+			URL page = new URL(fullURL); // Process the URL far enough to find the right handler
+			URLConnection urlc = page.openConnection();
+			urlc.setUseCaches(false); // Don't look at possibly cached data
+			if (toString) {
+				batchreport.writeDetailRec("Content-type = " + urlc.getContentType()); // See what's here
+				batchreport.writeDetailRec("Content-length = " + urlc.getContentLength()); // See how much of it there is
+			}
+			
+			// Read it all and print it out
+			BufferedReader br = new BufferedReader(new InputStreamReader(urlc.getInputStream()));
+			String buffer = "\n";
+
+			while (buffer != null) {
+				try {
+//					batchreport.writeDetailRec(buffer);
+					buffer = br.readLine();
+					if (buffer != null)
+						replyMsg = replyMsg + buffer;
+				} catch (IOException ioe) {
+					ioe.printStackTrace();
+					return null;
+				}
+			}
+			if (toString)
+				batchreport.writeDetailRec("-- END HTTP -- " + sdfDb2.format(Calendar.getInstance().getTime()));
+			
+			batchreport.writeDetailRec("Transferred to Web site successfully!");
+			return replyMsg;
+		} catch (MalformedURLException mue) {
+			batchreport.writeDetailRec(fullURL + " is not a URL that can be resolved");
+			return null;
+		} catch (IOException ie) {
+			batchreport.writeDetailRec("*** ERROR ***  " + ie.toString());
+			batchreport.writeDetailRec("*** ERROR ***  " + ie.getCause().getMessage());
+			ie.printStackTrace();
+			return null;
+		}
+	}
+	
+	/**
+	 * This method takes in the url and xml and posts to the URL.
+	 * 
+	 * @param  url String url to post to
+	 * @param  xml String xml message to be posted
+	 * @return result - String the response sent back from AmId
+	 * @throws MalformedURLException
+	 * @throws IOException
+	 */
+	public String postXmlToUrl(String url, String xml) throws MalformedURLException, IOException {
+		String replyMsg = "";
+
+		URL page = new URL(url);
+		URLConnection conn = page.openConnection();
+    HttpURLConnection urlc = (HttpURLConnection) conn;
+    urlc.setDoOutput(true); 
+    urlc.setRequestProperty("Content-Length", Integer.toString(xml.length())); 
+	  urlc.setRequestProperty("Content-Type","text/xml; charset=utf-8");
+	  urlc.setRequestMethod( "POST" );
+	  urlc.setUseCaches (false);
+
+		if (toString) 
+			batchreport.writeDetailRec("-- START HTTP -- "	+ sdfDb2.format(Calendar.getInstance().getTime()));
+		 
+    try {
+    	// Send data to site
+			BufferedWriter wr = new BufferedWriter(new OutputStreamWriter(urlc.getOutputStream(), "UTF-8"));
+			//Send data
+			wr.write(xml);
+			wr.flush();
+
+			// check to see if return code is not 200
+			if (urlc.getResponseCode() != HttpURLConnection.HTTP_OK){
+				System.out.println(urlc.getResponseCode() + " "	+ urlc.getResponseMessage());
+			}
+			
+    	// Now read data from site
+			BufferedReader br = new BufferedReader(new InputStreamReader(urlc.getInputStream()));
+			String buffer = "\n";
+			// Get the reply message
+			while ((buffer = br.readLine()) != null) {
+				replyMsg = replyMsg + buffer;
+			}
+
+			// close the reader
+			br.close();
+			// close the writer
+			wr.close();
+			
+		} catch (IOException ioe) {
+			System.err.println("BOOM  " + ioe.getCause().toString());
+			throw ioe;
+		}
+
+		if (toString)
+			batchreport.writeDetailRec("-- END HTTP -- " + sdfDb2.format(Calendar.getInstance().getTime()));
+		
+     return replyMsg;
+	}
+	
+	/**
+	 * This method takes in a URL and Vector and POSTs to the URL.
+	 * 
+	 * @param  url String url to post to
+	 * @param  xml String xml message to be posted
+	 * @return result - String the response sent back from AmId
+	 * @throws MalformedURLException
+	 * @throws IOException
+	 */
+	public String postFileToUrl(String url, Vector inData) throws MalformedURLException, IOException {
+		String replyMsg = "";
+
+		URL page = new URL(url);
+		URLConnection conn = page.openConnection();
+    HttpURLConnection urlc = (HttpURLConnection) conn;
+	  urlc.setUseCaches (false);
+    urlc.setDoOutput(true);
+	  urlc.setRequestMethod( "POST" );
+	  urlc.setRequestProperty("Content-Type","text/plain; charset=utf-8");
+
+	  String file = buildFile(inData);
+	  
+    urlc.setRequestProperty("Content-Length", Integer.toString(file.length())); 
+	  
+		if (toString) 
+			batchreport.writeDetailRec("-- START HTTP -- "	+ sdfDb2.format(Calendar.getInstance().getTime()));
+  
+    try {
+    	// Send data to site
+			BufferedWriter wr = new BufferedWriter(new OutputStreamWriter(urlc.getOutputStream(), "UTF-8"));
+ 			wr.write(file);
+      // flush the writer
+			wr.flush();
+
+			// check to see if return code is not 200
+			if (urlc.getResponseCode() != HttpURLConnection.HTTP_OK){
+				System.out.println(urlc.getResponseCode() + " "	+ urlc.getResponseMessage());
+			}
+			
+    	// Now read data from site
+			BufferedReader br = new BufferedReader(new InputStreamReader(urlc.getInputStream()));
+			String buffer = "\n";
+			// Get the reply message
+			while ((buffer = br.readLine()) != null) {
+				replyMsg = replyMsg + buffer;
+			}
+
+			// System.out.println("replyMsg:  " + replyMsg);
+			
+			// close the reader
+			br.close();
+			// close the writer
+			wr.close();
+			
+		} catch (IOException ioe) {
+			System.err.println("BOOM  " + ioe.getCause().toString());
+			throw ioe;
+		}
+
+		if (toString)
+			batchreport.writeDetailRec("-- END HTTP -- " + sdfDb2.format(Calendar.getInstance().getTime()));
+		
+    return replyMsg;
+	}
+
+
+	/**
+	 * @param inData
+	 * @return
+	 */
+	private static String buildFile(Vector inData) {
+		String outData = null;
+
+		outData = inData.toString();
+		
+		return outData;
+	}
+}
